@@ -14,7 +14,7 @@ import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.elasticsearch.action.admin.indices.create.CreateIndexResponse;
 import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsResponse;
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
-import org.elasticsearch.action.index.IndexAction;
+import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.HandledTransportAction;
 import org.elasticsearch.action.support.WriteRequest;
@@ -194,31 +194,27 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
     }
 
     protected void saveRewriter(final Task task, final PutRewriterRequest request,
-                                final ActionListener<PutRewriterResponse> listener) throws IOException {
-        final ActionRequest indexRequest = buildIndexRequest(task, request);
-
-        client.execute(IndexAction.INSTANCE, indexRequest,
-
-                new ActionListener<>() {
-                    @Override
-                    public void onResponse(final DocWriteResponse indexResponse) {
-                        LOGGER.info("Saved rewriter {}", request.getRewriterId());
-                        client.execute(NodesReloadRewriterAction.INSTANCE,
-                                new NodesReloadRewriterRequest(request.getRewriterId()),
-                                wrap(
-                                        (reloadResponse) -> listener
-                                                .onResponse(new PutRewriterResponse(indexResponse, reloadResponse)),
-                                        listener::onFailure
-                                ));
-                    }
-
-                    @Override
-                    public void onFailure(final Exception e) {
-                        LOGGER.error("Could not save rewriter " + request.getRewriterId(), e);
-                        listener.onFailure(e);
-                    }
-                })
-        ;
+                            final ActionListener<PutRewriterResponse> listener) throws IOException {
+        final IndexRequest indexRequest = buildIndexRequest(task, request);
+    
+        client.index(indexRequest, new ActionListener<IndexResponse>() {
+            @Override
+            public void onResponse(final IndexResponse indexResponse) {
+                LOGGER.info("Saved rewriter {}", request.getRewriterId());
+                client.execute(NodesReloadRewriterAction.INSTANCE,
+                        new NodesReloadRewriterRequest(request.getRewriterId()),
+                        wrap(
+                                reloadResponse -> listener.onResponse(new PutRewriterResponse(indexResponse, reloadResponse)),
+                                listener::onFailure
+                        ));
+            }
+    
+            @Override
+            public void onFailure(final Exception e) {
+                LOGGER.error("Could not save rewriter " + request.getRewriterId(), e);
+                listener.onFailure(e);
+            }
+        });
     }
 
     private ActionRequest buildIndexRequest(final Task parentTask, final PutRewriterRequest request) throws IOException {
